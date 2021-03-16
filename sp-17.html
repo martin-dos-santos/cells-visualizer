@@ -23,7 +23,7 @@
 <body>
 <div id="map"></div>
 <script>
-  window.appConfig = {radius: 100};
+  window.appConfig = {radius: 1000};
   mapboxgl.accessToken = 'pk.eyJ1IjoicGxhdGVhZG9kZXYiLCJhIjoiY2ttNTluNHhpMGNkMzJ2b2plNjBxZzk0eiJ9.EJ6SwIQaHkx8M1TxzflPGQ';
   var map = new mapboxgl.Map({
     container: 'map',
@@ -60,6 +60,7 @@
     });
 
     let selectedFeature = null;
+    let affectedFeatures = [];
 
     function fetchAffectedCells(lat, lng, cb) {
       fetch(`https://geo-stores-routing.herokuapp.com/geo-stores-routing/v1/cells?lat=${lat}&lng=${lng}&radius=${window.appConfig.radius}`)
@@ -68,7 +69,9 @@
     }
 
     function handleCellClick(e) {
+      console.log("Click in", e.lngLat);
       if (e.features.length > 0) {
+        console.log("Click in cell id", e.features[0].id);
         if (selectedFeature !== null) {
           map.setFeatureState({source: 'cells', id: selectedFeature}, {hover: false});
         }
@@ -76,8 +79,15 @@
         map.setFeatureState({source: 'cells', id: selectedFeature}, {hover: true});
         const {lat, lng} = e.lngLat;
         fetchAffectedCells(lat, lng, (data) => {
+          affectedFeatures.forEach((cellID) => {
+            map.setFeatureState({source: 'cells', id: cellID}, {affected: false})
+          })
+          affectedFeatures = [];
           if (data.cells !== null) {
-            data.cells.forEach((cellID) => map.setFeatureState({source: 'cells', id: cellID}, {affected: true}))
+            data.cells.forEach((cellID) => {
+              map.setFeatureState({source: 'cells', id: cellID}, {affected: true})
+              affectedFeatures.push(cellID);
+            })
           }
         });
       }
