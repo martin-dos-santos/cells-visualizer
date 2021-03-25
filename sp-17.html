@@ -6,6 +6,7 @@
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.1.1/mapbox-gl.css" rel="stylesheet">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.1.1/mapbox-gl.js"></script>
+  <script src='https://npmcdn.com/mapbox-gl-circle/dist/mapbox-gl-circle.min.js'></script>
   <style>
     body {
       margin: 0;
@@ -23,7 +24,7 @@
 <body>
 <div id="map"></div>
 <script>
-  window.appConfig = {radius: 1000};
+  window.appConfig = {radius: 2500};
   mapboxgl.accessToken = 'pk.eyJ1IjoicGxhdGVhZG9kZXYiLCJhIjoiY2ttNTluNHhpMGNkMzJ2b2plNjBxZzk0eiJ9.EJ6SwIQaHkx8M1TxzflPGQ';
   var map = new mapboxgl.Map({
     container: 'map',
@@ -31,6 +32,7 @@
     center: [-46.6482073415646, -23.583538250690313],
     zoom: 11
   });
+  var coverageRadius = null;
 
   map.on('load', function () {
     map.addSource('cells', {
@@ -58,7 +60,7 @@
         ]
       }
     });
-
+    
     let selectedFeature = null;
     let affectedFeatures = [];
 
@@ -68,32 +70,42 @@
         .then(data => cb(data));
     }
 
-    function handleCellClick(e) {
-      console.log("Click in", e.lngLat);
-      if (e.features.length > 0) {
-        console.log("Click in cell id", e.features[0].id);
-        if (selectedFeature !== null) {
-          map.setFeatureState({source: 'cells', id: selectedFeature}, {hover: false});
-        }
-        selectedFeature = e.features[0].id;
-        map.setFeatureState({source: 'cells', id: selectedFeature}, {hover: true});
-        const {lat, lng} = e.lngLat;
-        fetchAffectedCells(lat, lng, (data) => {
-          affectedFeatures.forEach((cellID) => {
-            map.setFeatureState({source: 'cells', id: cellID}, {affected: false})
-          })
-          affectedFeatures = [];
-          if (data.cells !== null) {
-            data.cells.forEach((cellID) => {
-              map.setFeatureState({source: 'cells', id: cellID}, {affected: true})
-              affectedFeatures.push(cellID);
-            })
-          }
-        });
+    function handleClick(e) {
+      const {lat, lng} = e.lngLat;
+      if(coverageRadius !== null) {
+	coverageRadius.remove();
       }
+      coverageRadius = createCircle(e.lngLat);
+      fetchAffectedCells(lat, lng, (data) => {
+        affectedFeatures.forEach((cellID) => {
+          map.setFeatureState({source: 'cells', id: cellID}, {affected: false})
+        })
+        affectedFeatures = [];
+        if (data.cells !== null) {
+          data.cells.forEach((cellID) => {
+            map.setFeatureState({source: 'cells', id: cellID}, {affected: true})
+            affectedFeatures.push(cellID);
+          })
+        }
+      });
     }
 
-    map.on('click', 'cell-fills', handleCellClick);
+    map.on('click', handleClick);
+    function createCircle(position) {
+      var circle = new MapboxCircle(position, window.appConfig.radius, {
+	  editable: false,
+	  minRadius: window.appConfig.radius,
+	  fillColor: '#29AB87'
+	}).addTo(map);
+      circle.on('centerchanged', function(circleObj){
+	console.log("New center", circleObj.getCenter());
+      });
+      circle.on('radiuschanged', function(circleObj){
+	console.log("New radius", circleOBj.getRadius());
+      });
+      return circle
+    }
+
   });
 
 </script>
