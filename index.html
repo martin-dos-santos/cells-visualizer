@@ -5,8 +5,10 @@
   <title>Add markers to a web map with a symbol layer</title>
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.1.1/mapbox-gl.css" rel="stylesheet">
+  <link href="css/range-slider.css" rel="stylesheet">
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.1.1/mapbox-gl.js"></script>
   <script src='https://npmcdn.com/mapbox-gl-circle/dist/mapbox-gl-circle.min.js'></script>
+
   <style>
     body {
       margin: 0;
@@ -18,23 +20,55 @@
       top: 0;
       bottom: 0;
       width: 100%;
+      z-index: 0;
     }
+
+    #control-bar {
+      position: fixed;
+      width: 90vw;
+      border-radius: 10px;
+      bottom: 1vh;
+      left: 0;
+      margin-right: 5vw;
+      margin-left: 5vw;
+      /* transform: translate(calc(14vw - 50%), calc(65vw - 100%)); */
+      z-index: 1;
+    }
+
+    @media only screen and (min-width: 768px) {
+      /* For desktop: */
+      #control-bar {
+        width: 30vw;
+        bottom: 2vh;
+        margin-right: 2.5vw;
+        margin-left: 2.5vw;
+      }
+    }
+
+
   </style>
 </head>
 <body>
+<div id="control-bar">
+  <div class="range-wrap">
+    <input type="range" class="range" min="1000" max="5000" step="100" value="3000">
+    <output class="bubble">3000m</output>
+  </div>
+</div>
 <div id="map"></div>
 <script>
   mapboxgl.accessToken = 'pk.eyJ1IjoicGxhdGVhZG9kZXYiLCJhIjoiY2ttNTluNHhpMGNkMzJ2b2plNjBxZzk0eiJ9.EJ6SwIQaHkx8M1TxzflPGQ';
   window.app = {
-    radius: 2500,
-    coverageRadius: null,
+    radius: 5000,
+    coverageCircle: null,
     affectedCells: [],
     map: new mapboxgl.Map({
       container: 'map',
       style: 'mapbox://styles/mapbox/dark-v9',
       center: [-46.6482073415646, -23.583538250690313],
       zoom: 11
-    })
+    }),
+    lngLat: null,
   };
 
   window.app.map.on('load', function () {
@@ -64,41 +98,29 @@
       }
     });
 
-    function fetchAffectedCells(lat, lng, cb) {
-      fetch(`https://geo-stores-routing.herokuapp.com/geo-stores-routing/v1/cells?lat=${lat}&lng=${lng}&radius=${window.app.radius}`)
-        .then(response => response.json())
-        .then(data => cb(data));
-    }
-
-    function handleClick(e) {
-      const {lat, lng} = e.lngLat;
-      if (window.app.coverageRadius !== null) {
-        window.app.coverageRadius.remove();
-      }
-      window.app.coverageRadius = createCircle(e.lngLat).addTo(window.app.map);
-      fetchAffectedCells(lat, lng, (data) => {
-        removeAffectedCells();
-        if (data.cells !== null) {
-          markCellsAsAffected(data.cells);
-        }
-      });
-    }
-
     window.app.map.on('click', handleClick);
 
-    function createCircle(position) {
-      return new MapboxCircle(position, window.app.radius, {
-        editable: false,
-        minRadius: window.app.radius,
-        fillColor: '#29AB87'
-      });
+    function handleClick(e) {
+      let {radius} = window.app;
+      const {lat, lng} = e.lngLat;
+      window.app.lngLat = {lng: lng, lat: lat};
+
+      fetchAffectedCells(lat, lng, radius);
     }
 
-    function removeAffectedCells() {
-      window.app.affectedCells.forEach((cellID) => {
-        window.app.map.setFeatureState({source: 'cells', id: cellID}, {affected: false})
-      });
-      window.app.affectedCells = [];
+    function fetchAffectedCells(lat, lng, radius) {
+      if (window.app.coverageCircle !== null) {
+        window.app.coverageCircle.remove();
+      }
+      window.app.coverageCircle = createCoverageCircle({lng: lng, lat: lat}).addTo(app.map);
+      fetch(`https://geo-stores-routing.herokuapp.com/geo-stores-routing/v1/cells?lat=${lat}&lng=${lng}&radius=${radius}`)
+        .then(response => response.json())
+        .then((data) => {
+          markCellsAsNotAffected();
+          if (data.cells !== null) {
+            markCellsAsAffected(data.cells);
+          }
+        });
     }
 
     function markCellsAsAffected(cells) {
@@ -107,9 +129,68 @@
         window.app.affectedCells.push(cellID);
       });
     }
+
+    function markCellsAsNotAffected() {
+      window.app.affectedCells.forEach((cellID) => {
+        window.app.map.setFeatureState({source: 'cells', id: cellID}, {affected: false})
+      });
+      window.app.affectedCells = [];
+    }
+
+    function createCoverageCircle(position) {
+      return new MapboxCircle(position, window.app.radius, {
+        editable: false,
+        minRadius: window.app.radius,
+        maxRadius: 5000,
+        fillColor: '#3b8e1a',
+        strokeColor: '#000000',
+        strokeWeight: 0.8,
+        strokeOpacity: 1,
+        fillOpacity: 0.50,
+        refineStroke: true,
+      });
+    }
+
+    const allRanges = document.querySelectorAll(".range-wrap");
+    allRanges.forEach(wrap => {
+      const range = wrap.querySelector(".range");
+      const bubble = wrap.querySelector(".bubble");
+
+      range.addEventListener("input", () => {
+        window.app.radius = range.value;
+        setBubble(range, bubble);
+      });
+      range.addEventListener("input", debounce(() => {
+        if (window.app.coverageCircle === null) {
+            return
+        }
+        fetchAffectedCells(window.app.lngLat.lat, window.app.lngLat.lng, window.app.radius);
+      }, 500));
+      setBubble(range, bubble);
+    });
+
+    function setBubble(range, bubble) {
+      const val = range.value;
+      const min = range.min ? range.min : 0;
+      const max = range.max ? range.max : 100;
+      const newVal = Number(((val - min) * 100) / (max - min));
+      bubble.innerHTML = val + "m";
+
+      // Sorta magic numbers based on size of the native UI thumb
+      bubble.style.left = `calc(${newVal}% + (${8 - newVal * 0.15}px))`;
+    }
+
+    function debounce(callback, wait) {
+      let timerId;
+      return (...args) => {
+        clearTimeout(timerId);
+        timerId = setTimeout(() => {
+          callback(...args);
+        }, wait);
+      };
+    }
+
   });
-
 </script>
-
 </body>
 </html>
